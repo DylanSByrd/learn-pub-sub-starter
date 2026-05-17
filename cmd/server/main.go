@@ -26,7 +26,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create message channel: %v", err)
 	}
-	defer channel.Close()
+	// defer channel.Close()
+
+	const gameLogsRoutingKey = routing.GameLogSlug + ".*"
+	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, gameLogsRoutingKey, pubsub.SimpleQueueDurable)
+	if err != nil {
+		log.Fatalf("Could not bind game_logs queue: %v", err)
+	}
 
 	gamelogic.PrintServerHelp()
 

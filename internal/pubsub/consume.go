@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -35,16 +36,41 @@ func DeclareAndBind(conn* amqp.Connection, exchange, queueName, key string, queu
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("Failed to declare queue %v: %v", queueName, err)
 	}
-	defer func() {
-		if err != nil {
-			channel.QueueDelete(queueName, true, true, true)
-		}
-	}()
 
 	err = channel.QueueBind(queueName, key, exchange, false, nil)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("Failed to bind queue %v: %v", queueName, err)
 	}
 
+	fmt.Printf("Queue %v declared and bound!\n", queueName)
 	return channel, queue, nil
+}
+
+func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T)) (err error) {
+	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return fmt.Errorf("Failed to subscribe to %v: %v", queueName, err)
+	}
+
+	deliveryChan, err := channel.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to subscribe to %v: %v", queueName, err)
+	}
+
+	go func() {
+		defer channel.Close()
+		for msg := range deliveryChan {
+			var data T
+			if err = json.Unmarshal(msg.Body, &data); err != nil {
+				fmt.Printf("Error unmsrhalling json: %v\n", err)
+				continue
+			}
+			handler(data)
+			if err = msg.Ack(false); err != nil {
+				fmt.Printf("Error ack'ing message: %v\n", err)
+			}
+		}
+	}()
+
+	return nil
 }
